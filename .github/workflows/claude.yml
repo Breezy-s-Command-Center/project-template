@@ -1,0 +1,69 @@
+# Claude Code — PR Assistant + Auto-Review
+# 
+# Two triggers:
+# 1. @claude mention in any PR/issue comment → Claude responds interactively
+# 2. PR opened or updated → Claude auto-reviews the diff
+#
+# Requires:
+# - ANTHROPIC_API_KEY in repo secrets (or org-level secret)
+# - Claude GitHub App installed on the repo (https://github.com/apps/claude)
+
+name: Claude
+
+on:
+  # Interactive: respond to @claude mentions
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+  # Auto-review: trigger on every PR open/update
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # Job 1: Interactive @claude responses
+  claude-interactive:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  # Job 2: Automatic code review on every PR
+  claude-auto-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request. Focus on:
+
+            1. **Correctness**: Are there logic errors, edge cases, or bugs?
+            2. **Code quality**: Is the code clean, well-structured, and maintainable?
+            3. **CLAUDE.md compliance**: Does this change follow the rules in CLAUDE.md? If it violates any, call them out specifically.
+            4. **Compound learning**: Based on what you see in this diff, propose any CLAUDE.md additions or refinements that would prevent future mistakes. Format these as a separate "Suggested CLAUDE.md Updates" section.
+            5. **Security**: Any secrets, credentials, or unsafe patterns?
+
+            Be direct and specific. Don't pad with generic praise. If the PR looks good, say so in one sentence and move on.
